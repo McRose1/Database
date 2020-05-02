@@ -1,3 +1,12 @@
+## Java MySQL 连接
+使用 JDBC 连接 MySQL 数据库
+
+```Java
+Class.forName("com.mysql.cj.jdbc.Driver");
+conn = DriverManager.getConnection("jdbc:mysql://localhost:3306/test_demo?useSSL=false&serverTimezone=UTC","root","password");
+```
+
+
 ## MySQL 锁机制
 显著的特点是不同的存储引擎支持不同的锁机制
 
