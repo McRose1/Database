@@ -1,10 +1,44 @@
 # 数据库的并发
 许多事务对同一数据进行操作
 
-## 带来的问题
-- 丢失更新
-- 读脏数据
-- 死锁（不可重复读）
+## 事务并发访问引起的问题以及如何避免
+### 更新丢失 —— MySQL 所有事务隔离级别在数据库层面上均可避免
+取款存款问题可能会产生更新丢失
+
+### 脏读 —— 已提交读（READ_COMMITTED）事务隔离级别以上可以避免（Oracle 默认隔离级别）
+```sql
+select @@tx_isolation;    # 查找当前事务隔离级别
+set session transaction isolation level read uncommitted;   # 未提交读隔离级别可能会产生脏读：允许读取未提交的数据
+start transaction;        # 开启事务，相当于将自动提交关闭
+update account_innodb set balance = 1000 - 100 where id = 1;
+select * from account_innodb where id = 1;
+# 并未提交，如果此时有别的 session 去读取这个数据，会发生回滚
+rollback;
+```
+
+### 不可重复读 —— 可重复读（REPEATABLE-READ）事务隔离级别以上可以避免（InnoDB（MySQL）默认）
+```sql
+select @@tx_isolation; 
+start transaction;
+select * from account_innodb where id = 1;
+```
+当 session1 重复读取一个数据，它会读到其他 session 修改并且提交了的值，从上帝视角来看，这是正确的操作；
+
+但是 session1 它本身并不知道是否有别的 session 已经修改这个数据，会使 session1 对自己数据的可靠性产生紊乱
+
+解决方法：
+```sql
+set session transaction isolation level repeatable read;    # 此时这个 session 的值不随其他 session 的修改而改变，重复读永远是相同的值
+# 但是这从逻辑上来说是错误的，需要进行以下修改
+update account_innodb set balance = balance - 100 where id = 1;
+```
+
+### 幻读 —— 串行（SERIALIZABLE）事务隔离级别可以避免、MySQL 的 InnoDB 也可以避免幻读
+session1 在更新的时候，其他 session 进行插入删除操作，session1 此时会发现系统提示更新的行数并不是原先的行数（可能被增加或删除），本来只是想更新 3 条数据，现在变成了更新 4 条数据，显然是错误的
+
+最高的事务隔离级别——串行，会阻塞其他 session 进行插入删除操作
+
+
 
 ## 解决方法
 封锁技术
