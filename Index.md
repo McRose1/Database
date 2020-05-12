@@ -111,14 +111,89 @@ InnoDB:
 
 ### 如何定位并优化慢查询 SQL
 
+#### 根据慢日志定位慢查询 SQL
+show variables like '%quer%'; ->
+- slow_query_log：on/off
+- slow_query_log_file：日志存储的位置
+- long_query_time：设置超过多少时间算作慢日志
+
+```sql
+show status like '%slow_queries%';
+
+set global slow_query_log = on;（打开慢查询日志）
+set global long_query_tie = 1;（设置慢查询基准时间）需要重启数据库
+
+select count(id) from person_info_large;
+select name from person_info_large order by name desc;
+```
+#### 使用 explain 等工具分析 SQL
+```sql
+explain select name from person_info_large order by name desc;
+```
+- type（MySQL 找到需要数据行的方式）；最优->最差：system>const>eq_ref>ref>fulltext>ref_or_null>index_merge>unique_subquery>index_subquery>range>**index>all（全表扫描）**
+- extra：extra 中出现以下 2 项意味着 MySQL 根本不能使用索引，效率会收到重大影响。应尽可能对此进行优化。
+  - Using filesort：表示 MySQL 会对结果使用一个外部索引排序，而不是从表里按索引次序读到相关内容。可能在内存或者磁盘上进行排序。MySQL 中无法利用索引完成的排序操作称为“文件排序”。
+  - Using temporary：表示 MySQL 在对查询结果排序时使用临时表。常见于排序 order by 和分组查询 group by。
+
+#### 修改 SQL 或者尽量让 SQL 走索引
+- 修改 SQL
+```sql
+explain select account from person_info_large order by account desc;    // DML
+```
+type: all -> index
+
+extra: Using filesort -> Using index
+
+如果业务要求就是要按 name 排序怎么办？
+- 让 SQL 走索引
+```sql
+alter table person_info_large add index idx_name(name);     // DDL
+```
+
+```sql
+explain select count(id) from person_info_large;
+```
+- type: index
+- key: account 
+- extra: Using index
+我们可以发现这里虽然主键是 id，但是 key 用的却是唯一键；
+
+因为 MySQL 的查询优化器主要目标是尽可能的使用索引，并且使用最严格的索引来消除尽可能多的数据行，它会根据分析和判断的标准决定走哪一个索引
+
+不走主键索引主要可能是考虑到了密集索引的叶子节点把其他列的数据也存放进去了，效率比稀疏索引低，因为稀疏索引只存储了关键字和主键的值
+
+```sql
+explain select count(id) from person_info_large force index(primary);
+```
+会发现这个 SQL 语句执行的时间要比上面那个多
+
+MySQL 优化器并不是永远最优的，需要自己具体事情具体分析
+
 ### 联合索引的最左匹配原则的成因
+KEY 'index_area_title'('area', 'title') -> area 位于最左
+```sql
+explain select * from person_info_large where area = '' and title = '';
+```
+走联合索引：
+- possible_keys: index_area_title 
+- key: index_area_title 
+```sql
+explain select * from person_info_large where area = '';
+```  
+依然走的是联合索引：index_area_title
+```sql
+explain select * from person_info_large where title = '';
+```
+不走联合索引而走全表扫描 -> 如果不走最左索引，就无法通过联合索引查找（无法进入 B+树）
 
+#### 最左前缀匹配原则
+1. MySQL 会一直向右匹配直到遇到范围查询（&gt;, &lt;, between, like）就停止匹配，比如 a = 3 and b = 4 and c &gt; 5 and d = 6 如果建立（a,b,c,d）顺序的索引，d 是用不到索引的，如果建立（a,b,d,c）的索引则都可以用到，a,b,d 的顺序可以任意调整。
+2. = 和 in 可以乱序，比如 a = 1 and b = 2 and c = 3 建立（a,b,c）索引可以任意顺序，MySQL 的查询优化器会帮我们优化成索引可以识别的形式。
 
-
-
-
-
-
+### 索引是建立得越多越好吗？
+- 数据量小的表不需要建立索引，建立会增加额外的索引开销
+- 数据变更需要维护索引，因此更多的索引意味着更多的维护成本
+- 更多的索引意味着也需要更多的空间
 
 
 
