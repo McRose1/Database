@@ -18,6 +18,15 @@
 ### 乐观锁
 乐观锁认为一个用户读数据的时候，别人不会去写自己所读的数据
 
+version 
+```sql
+# 1.先读取test_innodb的数据，得到 version1d 的值为 VersionValue
+select version from test_innodb where id = 2;
+# 2.每次更新test_innodb表中的 money 字段得到时候，为了防止发生冲突，先去检查 version 再做更新，更新成功的话 version+1
+update test_innodb set money = 123, version = 0 + 1 where version = 0 and id = 2;
+```
+事务提交之后再去判断，如果发现 version 过期再进行修改
+
 ### 悲观锁
 悲观锁认为自己读数据库的时候，别人可能刚好在写自己刚读的数据。
 
@@ -31,6 +40,12 @@
 也就是在数据库表中单独加一列时间戳，比如“TimeStamp”，**每次读出来的时候，把该字段也读出来，当写回去的时候，把该字段加 1，提交之前，跟数据库的该字段比较一次，如果比数据库的值大的话，就允许保存，否则不允许保存**，这种处理方法虽然不使用数据库系统提供的锁机制，但是可以大大提高数据库处理的并发量。
 
 ## 数据库锁
+- 按锁的粒度划分，可分为表级锁、行级锁、页级锁（介于表和行之间）
+- 按锁级别划分，可分为共享锁、排他锁
+- 按加锁方式划分，可分为自动锁、显式锁
+- 按操作划分，可分为 DML 锁、DDL 锁
+- 按使用方式划分，可分为乐观锁、悲观锁
+
 为了保证数据的完整性和一致性，数据库系统采用锁来实现事务的隔离性。
 
 从并发事务锁定的关系上看，可以分为共享锁定和独占锁定；
@@ -61,12 +76,63 @@
 2. SELECT...FOR UPDATE 语句允许用户一次锁定多条记录进行更新；
 3. 使用 COMMIT 或 ROLLBACK 语句释放锁。
 
+InnoDB 支持事务
+```sql
+show variables like 'autocommit';
+set autocommit = 0;         # 关闭自动提交
+```
+
+```sql
+select * from person_info_large where id = 3 lock in share mode;   # 加共享锁
+commit        # 释放锁
+```
+```sql
+update person_info_large set title = "test3" where id = 3;  
+```
+一个 session 加了共享锁以后，另一个 session 就不能加排他锁，需要先 commit 释放锁
+
+
 ### 表级锁
 表示对当前操作的整张表加锁，它实现简单，资源消耗较少，被大部分 MySQL 引擎支持。
 
 最常使用的 MyISAM 和 InnoDB 都支持表级锁定。
 
+```sql
+select * from person_info_myisam where id between 1 and 2000000;      // 该语句执行的时候会自动加上表级锁
+```
+
+```sql
+update person_info_myisam set account = account where id = 2000001;   // 该语句需要等上一个语句执行完毕才能执行
+```
+
 表级锁定分为表共享读锁（共享锁）与表独占写锁（排他锁）。
+
+先上读锁，后上读锁/写锁
+```sql
+select * from person_info_myisam where id between 1 and 2000000;
+```
+```sql
+select * from person_info_myisam where id in (2000000,2000001);
+```
+第二条 select（读锁） 语句并不会被 block
+
+上了共享锁（读锁）后还能上读锁或者写锁
+
+先上写锁，后上读锁/写锁
+```sql
+update person_info_myisam set account = account where id between 1 and 2000000;
+```
+```sql
+select * from person_info_myisam where id in (2000001);
+```
+第二条 select（读锁）语句会被 block
+
+上了排他锁（写锁）后就不能上读锁和写锁
+
+也可给 select 语句上排他锁
+```sql
+select * from person_info_myisam where id between 1 and 2000000 for update;
+```
 
 ### 页级锁
 页级锁是 MySQL 中锁定粒度介于行级锁和表级锁中间的一种锁。
@@ -77,12 +143,38 @@
 - 行级:引擎 INNODB, 单独的一行记录加锁, 其它进程还是可以对同一个表中的其它记录进行操作
 - 页级:引擎 BDB, 表级锁速度快, 但冲突多, 行级冲突少, 但速度慢, 页级折衷, 一次锁定相邻的一组记录
 
+## 锁模块常见面试问题
 
+### MyISAM 与 InnoDB 关于锁方面的区别是什么
 
+- MyISAM 默认用的是表级锁，不支持行级锁（不支持事务）
+对数据进行 select 的时候，会自动加上一个表级的读锁；对数据进行增删改的时候，会自动加上一个表级的写锁；当读锁未被释放时另一个 session 想要为表加上一个写锁，此时会被阻塞，直到所有的读锁都被释放为止
 
+```sql
+lock table person_info_myisam read;   // 加读锁
+unlock tables;                        // 释放读锁
+```
 
+- InnoDB 默认用的是行级锁（支持事务），也支持表级锁（不走索引的时候）
+行级锁开销比表级锁大
 
+MyISAM 适合的场景
+- 频繁执行全表 count 的语句
+- 对数据进行增删改的频率不高，查询非常频繁
+- 没有事务
 
+InnoDB 适合的场景
+- 数据增删改查都相当频繁
+- 可靠性要求比较高，要求支持事务
+
+### 数据库事务的四大特性
+单个逻辑单元
+
+### 事务隔离级别以及各级别下的并发访问问题
+
+### InnoDB 可重复读隔离级别下如何避免幻读
+
+### RC、RR 级别下的 InnoDB 的非阻塞读如何实现
 
 
 
