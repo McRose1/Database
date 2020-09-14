@@ -1,5 +1,5 @@
 # 表连接
-FROM table1 INNER|LEFT|RIGHT JOIN table2 ON contiona
+FROM table1 INNER|LEFT|RIGHT JOIN table2 ON condition
 
 JOIN 按照功能大致分为如下三类：
 - INNER JOIN（内连接，或等值连接）：取得两个表中存在连接匹配关系的记录
