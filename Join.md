@@ -1,4 +1,4 @@
-# Join
+# 表连接
 FROM table1 INNER|LEFT|RIGHT JOIN table2 ON contiona
 
 JOIN 按照功能大致分为如下三类：
