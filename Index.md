@@ -39,7 +39,7 @@
 如何优化？既保证查询时间少，又减少 IO 次数 -> 让每个节点存的信息增加（B Tree）
 
 #### B-Tree
-![B-Tree](/master/images/B-Tree.png)
+![B-Tree](/images/B-Tree.png)
 定义（约束条件）：
 1. 根节点至少包括 2 个孩子
 2. 树中每个节点最多包含 m 个孩子（m >= 2）-> m 阶树
@@ -67,7 +67,7 @@ B-Tree 索引的限制：
 - 如果查询中有某个列的范围查询，则其右边的所有列都无法使用索引
 
 #### B+ Tree（InnoDB）
-![B+Tree](/master/images/B+Tree.png)
+![B+Tree](/images/B+Tree.png)
 B+树是 B 树的变体，其定义基本与 B 树相同，除了：
 - 非叶子节点的子树指针与关键字个数相同（B+树能存储更多的关键字）
 - 非叶子节点的子树指针 P[i]，指向关键字值 [K[i], K[i+1]) 的子树
